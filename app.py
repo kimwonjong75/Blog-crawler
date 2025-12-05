@@ -105,8 +105,6 @@ def init_state():
         st.session_state["api_provider"] = "OpenAI"
     if "openai_api_key" not in st.session_state:
         st.session_state["openai_api_key"] = ""
-    if "gemini_api_key" not in st.session_state:
-        st.session_state["gemini_api_key"] = ""
     if "blogs" not in st.session_state:
         st.session_state["blogs"] = []
     if "selected_blog_id" not in st.session_state:
@@ -137,13 +135,6 @@ st.session_state["blogs"] = dbm.load_blogs()
 
 
 with st.sidebar:
-    st.header("앱 설정")
-    st.session_state["gemini_api_key"] = st.text_input(
-        "Google Gemini API 키",
-        value=st.session_state.get("gemini_api_key", ""),
-        type="password",
-    )
-
     st.header("블로그 관리")
     blog_name = st.text_input("블로그 이름", key="blog_name_input")
     blog_url = st.text_input(
@@ -175,13 +166,6 @@ with st.sidebar:
     if st.session_state.get("last_add_error"):
         st.sidebar.error(st.session_state["last_add_error"])
         st.session_state["last_add_error"] = ""
-
-    if st.session_state["blogs"]:
-        df_sidebar = pd.DataFrame(st.session_state["blogs"])
-        st.dataframe(df_sidebar[["name", "url"]], use_container_width=True, height=200)
-        st.subheader("재수집 대상")
-        for b in st.session_state["blogs"]:
-            st.checkbox(f"{b['name']}", key=f"collect_chk_{b['id']}")
 
     st.header("수집 기간")
     default_start, default_end = st.session_state["date_range"]
@@ -258,9 +242,9 @@ with col2:
         if st.button("수집중단"):
             st.session_state["cancel_scrape"] = True
     if st.button("AI 분석 요청"):
-        api_key = st.session_state.get("gemini_api_key") or os.environ.get("GEMINI_API_KEY") or st.secrets.get("GEMINI_API_KEY", None)
+        api_key = os.environ.get("GEMINI_API_KEY") or st.secrets.get("GEMINI_API_KEY")
         if not api_key:
-            st.warning("사이드바에서 API 키를 입력하세요")
+            st.error("Google Gemini API 키가 설정되지 않았습니다. 환경 변수(GEMINI_API_KEY)를 확인하세요.")
         else:
             sel_name = None
             sel_url = None
