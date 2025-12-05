@@ -178,6 +178,10 @@ with st.sidebar:
     if isinstance(picked, tuple) and len(picked) == 2:
         st.session_state["date_range"] = picked
 
+    if st.session_state.get("scraping"):
+        if st.button("수집중단", use_container_width=True):
+            st.session_state["cancel_scrape"] = True
+
     if st.button("데이터 수집 시작", use_container_width=True):
         if not st.session_state.get("selected_blog_id"):
             st.sidebar.error("메인 화면에서 블로그를 선택하세요")
@@ -219,28 +223,27 @@ with st.sidebar:
 
 st.title("블로그 AI 분석기")
 
-col1, col2 = st.columns([3, 2])
-with col1:
-    if st.session_state["blogs"]:
-        options = {b["name"]: b["id"] for b in st.session_state["blogs"]}
-        names = list(options.keys())
-        default_index = 0
-        if st.session_state["selected_blog_id"] in options.values():
-            for i, n in enumerate(names):
-                if options[n] == st.session_state["selected_blog_id"]:
-                    default_index = i
-                    break
-        selected_name = st.selectbox("블로그 선택", names, index=default_index)
-        st.session_state["selected_blog_id"] = options[selected_name]
-    else:
-        st.info("블로그를 추가하세요")
+if st.session_state["blogs"]:
+    options = {b["name"]: b["id"] for b in st.session_state["blogs"]}
+    names = list(options.keys())
+    default_index = 0
+    if st.session_state["selected_blog_id"] in options.values():
+        for i, n in enumerate(names):
+            if options[n] == st.session_state["selected_blog_id"]:
+                default_index = i
+                break
+    selected_name = st.selectbox("블로그 선택", names, index=default_index)
+    st.session_state["selected_blog_id"] = options[selected_name]
+else:
+    st.info("블로그를 추가하세요")
 
-with col2:
+tab1, tab2 = st.tabs(["AI 분석 및 대화", "수집 데이터 조회"])
+
+with tab1:
+    st.header("AI 분석 및 대화")
     st.session_state.setdefault("ai_question", "")
     st.session_state["ai_question"] = st.text_area("AI 질문", value=st.session_state.get("ai_question", ""), height=120)
-    if st.session_state.get("scraping"):
-        if st.button("수집중단"):
-            st.session_state["cancel_scrape"] = True
+    
     if st.button("AI 분석 요청"):
         api_key = os.environ.get("GEMINI_API_KEY") or st.secrets.get("GEMINI_API_KEY")
         if not api_key:
@@ -253,8 +256,12 @@ with col2:
                 if sel_list:
                     sel_name = sel_list[0]["name"]
                     sel_url = sel_list[0]["url"]
+            
+            # AI Context uses global date range (Sidebar) or View range? 
+            # Using Sidebar range for consistency with previous behavior unless specified.
             start_date, end_date = st.session_state["date_range"]
             posts_for_ai = dbm.query_posts_for_blog(sel_url, start_date, end_date, "")
+            
             if not posts_for_ai:
                 st.info("관련된 글이 없습니다.")
             else:
@@ -293,7 +300,6 @@ with col2:
                             if resp is None and last_err is not None:
                                 raise last_err
                             ans = getattr(resp, "text", None) or str(resp)
-                            ans = getattr(resp, "text", None) or str(resp)
                         except Exception as e:
                             ans = f"Gemini 호출 중 오류: {e}"
                     finally:
@@ -301,34 +307,15 @@ with col2:
                         st.session_state["chat_history"].append({"role": "user", "content": question})
                         st.session_state["chat_history"].append({"role": "assistant", "content": st.session_state["ai_answer"]})
 
-st.divider()
+    if st.session_state.get("ai_answer"):
+        st.subheader("AI 분석 결과")
+        st.markdown(st.session_state["ai_answer"])
 
-if st.session_state["selected_blog_id"] is not None:
-    sel = [b for b in st.session_state["blogs"] if b["id"] == st.session_state["selected_blog_id"]]
-    if sel:
-        st.subheader(f"선택된 블로그: {sel[0]['name']}")
-else:
-    st.subheader("선택된 블로그: 없음")
-
-st.subheader("글 목록")
-def query_posts(blog_name: Optional[str], start_date: date, end_date: date, keyword: str) -> List[Dict]:
-    conn = sqlite3.connect("blog_data.db")
-    try:
-        where = ["date BETWEEN ? AND ?"]
-        params: List = [start_date.isoformat(), end_date.isoformat()]
-        if blog_name:
-            where.append("blog_name = ?")
-            params.append(blog_name)
-        kw = keyword.strip()
-        if kw:
-            where.append("(title LIKE ? OR content LIKE ?)")
-            like = f"%{kw}%"
-            params.extend([like, like])
-        sql = "SELECT blog_name, title, date, content, link, created_at FROM posts WHERE " + " AND ".join(where) + " ORDER BY date DESC, created_at DESC"
-        df = pd.read_sql_query(sql, conn, params=params)
-        return df.to_dict("records") if not df.empty else []
-    finally:
-        conn.close()
+    if st.session_state.get("chat_history"):
+        st.divider()
+        st.subheader("AI 대화 기록")
+        for m in st.session_state["chat_history"][-10:]:
+            st.write(f"{m['role']}: {m['content']}")
 
 def render_posts(posts: List[Dict]):
     if not posts:
@@ -347,26 +334,43 @@ def render_posts(posts: List[Dict]):
                 st.markdown(f'<a href="{l}" target="_blank">원본 보기</a>', unsafe_allow_html=True)
         st.divider()
 
-selected_blog_name = None
-selected_blog_url = None
-if st.session_state.get("selected_blog_id") is not None:
-    sel = [b for b in st.session_state["blogs"] if b["id"] == st.session_state["selected_blog_id"]]
-    if sel:
-        selected_blog_name = sel[0]["name"]
-        selected_blog_url = sel[0]["url"]
+with tab2:
+    st.header("수집 데이터 조회")
+    
+    c1, c2 = st.columns([1, 1])
+    with c1:
+        default_start, default_end = st.session_state.get("date_range", (date.today() - timedelta(days=7), date.today()))
+        view_picked = st.date_input(
+            "조회 기간",
+            value=(default_start, default_end),
+            max_value=date.today(),
+            key="view_date_range"
+        )
+    with c2:
+        st.text_input("검색어", key="search_query")
 
-start_date, end_date = st.session_state["date_range"]
-keyword = st.session_state.get("search_query", "")
-posts = dbm.query_posts_for_blog(selected_blog_url, start_date, end_date, keyword)
-if st.session_state.get("ai_answer"):
-    st.subheader("AI 분석 결과")
-    st.markdown(st.session_state["ai_answer"])
-if st.session_state.get("chat_history"):
-    st.subheader("AI 대화 기록")
-    for m in st.session_state["chat_history"][-10:]:
-        st.write(f"{m['role']}: {m['content']}")
+    selected_blog_url = None
+    if st.session_state.get("selected_blog_id") is not None:
+        sel = [b for b in st.session_state["blogs"] if b["id"] == st.session_state["selected_blog_id"]]
+        if sel:
+            selected_blog_url = sel[0]["url"]
+    
+    if selected_blog_url:
+        if isinstance(view_picked, tuple) and len(view_picked) == 2:
+            v_start, v_end = view_picked
+            posts = dbm.query_posts_for_blog(
+                selected_blog_url, 
+                v_start, 
+                v_end, 
+                st.session_state.get("search_query", "")
+            )
+            render_posts(posts)
+        else:
+            st.info("기간을 선택하세요 (시작일 - 종료일)")
+    else:
+        st.info("블로그를 선택하세요")
+
 if st.session_state.get("scrape_logs"):
-    st.subheader("수집 로그")
-    st.text("\n".join(st.session_state["scrape_logs"]))
-render_posts(posts)
+    with st.sidebar.expander("수집 로그"):
+        st.text("\n".join(st.session_state["scrape_logs"]))
 
