@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Supabase Blog Manager</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background: #f0f2f5; }
+        .container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        h1, h2 { color: #333; }
+        input, button { padding: 8px; margin: 5px 0; border-radius: 4px; border: 1px solid #ccc; }
+        button { background: #3b82f6; color: white; border: none; cursor: pointer; }
+        button:hover { background: #2563eb; }
+        .list-item { border-bottom: 1px solid #eee; padding: 10px 0; display: flex; justify-content: space-between; align-items: center; }
+        #auth-section, #app-section { display: none; }
+        .error { color: red; font-size: 0.9em; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Blog Manager (Supabase)</h1>
+    
+    <div id="setup-section">
+        <h2>Setup</h2>
+        <p>Please enter your Supabase credentials:</p>
+        <input type="text" id="supabase-url" placeholder="Supabase URL (https://xyz.supabase.co)" style="width: 100%;">
+        <input type="password" id="supabase-key" placeholder="Supabase Anon Key" style="width: 100%;">
+        <button onclick="initSupabase()">Connect</button>
+    </div>
+
+    <div id="auth-section">
+        <h2>Login</h2>
+        <input type="email" id="email" placeholder="Email">
+        <input type="password" id="password" placeholder="Password">
+        <button onclick="signUp()">Sign Up</button>
+        <button onclick="signIn()">Sign In</button>
+        <p id="auth-msg" class="error"></p>
+    </div>
+
+    <div id="app-section">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h2>My Blogs</h2>
+            <button onclick="signOut()">Sign Out</button>
+        </div>
+        
+        <div>
+            <input type="text" id="blog-name" placeholder="Blog Name">
+            <input type="text" id="blog-url" placeholder="Blog URL">
+            <button onclick="addBlog()">Add Blog</button>
+        </div>
+
+        <div id="blog-list"></div>
+
+        <h2>Recent Posts (Realtime)</h2>
+        <div id="post-list"></div>
+    </div>
+</div>
+
+<script>
+    let supabase;
+
+    // Check if creds are stored
+    const storedUrl = localStorage.getItem('supabase_url');
+    const storedKey = localStorage.getItem('supabase_key');
+
+    if (storedUrl && storedKey) {
+        document.getElementById('supabase-url').value = storedUrl;
+        document.getElementById('supabase-key').value = storedKey;
+        // Auto init? maybe wait for user to confirm
+    }
+
+    function initSupabase() {
+        const url = document.getElementById('supabase-url').value;
+        const key = document.getElementById('supabase-key').value;
+
+        if (!url || !key) {
+            alert('Please provide URL and Key');
+            return;
+        }
+
+        try {
+            supabase = window.supabase.createClient(url, key);
+            localStorage.setItem('supabase_url', url);
+            localStorage.setItem('supabase_key', key);
+            
+            document.getElementById('setup-section').style.display = 'none';
+            checkSession();
+        } catch (e) {
+            alert('Error initializing Supabase: ' + e.message);
+        }
+    }
+
+    async function checkSession() {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+            showApp(session.user);
+        } else {
+            document.getElementById('auth-section').style.display = 'block';
+        }
+
+        supabase.auth.onAuthStateChange((event, session) => {
+            if (session) {
+                showApp(session.user);
+            } else {
+                document.getElementById('app-section').style.display = 'none';
+                document.getElementById('auth-section').style.display = 'block';
+            }
+        });
+    }
+
+    async function signUp() {
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+        const { data, error } = await supabase.auth.signUp({ email, password });
+        if (error) document.getElementById('auth-msg').innerText = error.message;
+        else alert('Check your email for verification!');
+    }
+
+    async function signIn() {
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) document.getElementById('auth-msg').innerText = error.message;
+    }
+
+    async function signOut() {
+        await supabase.auth.signOut();
+    }
+
+    function showApp(user) {
+        document.getElementById('auth-section').style.display = 'none';
+        document.getElementById('app-section').style.display = 'block';
+        loadBlogs();
+        subscribePosts();
+    }
+
+    async function loadBlogs() {
+        const { data, error } = await supabase
+            .from('blogs')
+            .select('*')
+            .order('created_at', { ascending: false });
+        
+        if (error) {
+            console.error(error);
+            return;
+        }
+
+        const list = document.getElementById('blog-list');
+        list.innerHTML = '';
+        data.forEach(blog => {
+            const div = document.createElement('div');
+            div.className = 'list-item';
+            div.innerHTML = `
+                <span><b>${blog.name}</b> (${blog.url})</span>
+                <button onclick="deleteBlog(${blog.id})" style="background: #ef4444;">Delete</button>
+            `;
+            list.appendChild(div);
+        });
+    }
+
+    async function addBlog() {
+        const name = document.getElementById('blog-name').value;
+        const url = document.getElementById('blog-url').value;
+        
+        // Get current user
+        const { data: { user } } = await supabase.auth.getUser();
+
+        const { error } = await supabase
+            .from('blogs')
+            .insert({ name, url, user_id: user.id });
+        
+        if (error) alert(error.message);
+        else {
+            document.getElementById('blog-name').value = '';
+            document.getElementById('blog-url').value = '';
+            loadBlogs();
+        }
+    }
+
+    async function deleteBlog(id) {
+        if (!confirm('Are you sure?')) return;
+        const { error } = await supabase
+            .from('blogs')
+            .delete()
+            .eq('id', id);
+        
+        if (error) alert(error.message);
+        else loadBlogs();
+    }
+
+    function subscribePosts() {
+        const list = document.getElementById('post-list');
+        
+        // Load initial
+        supabase.from('posts').select('*').limit(10).order('created_at', { ascending: false })
+            .then(({ data }) => {
+                list.innerHTML = '';
+                if (data) data.forEach(p => renderPost(p));
+            });
+
+        // Subscribe
+        supabase
+            .channel('public:posts')
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'posts' }, payload => {
+                renderPost(payload.new, true);
+            })
+            .subscribe();
+    }
+
+    function renderPost(post, prepend = false) {
+        const list = document.getElementById('post-list');
+        const div = document.createElement('div');
+        div.className = 'list-item';
+        div.innerHTML = `
+            <div>
+                <div><b>${post.title}</b></div>
+                <div style="font-size: 0.8em; color: #666;">${post.blog_name} - ${post.date}</div>
+            </div>
+        `;
+        if (prepend) list.insertBefore(div, list.firstChild);
+        else list.appendChild(div);
+    }
+</script>
+
+</body>
+</html>
