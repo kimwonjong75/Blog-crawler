@@ -245,22 +245,31 @@ with st.sidebar:
                          break
                      
                      current_msg = status.empty()
+                     prog_bar = status.empty()
                      current_msg.write(f"**[{blog['name']}]** 준비 중...")
                      
                      def cb(p):
-                         pass
+                         prog_bar.progress(p)
 
                      def log_cb(msg):
                          msg_str = str(msg)
                          st.session_state["scrape_logs"].append(f"[{blog['name']}] {msg_str}")
+                         
                          if msg_str.startswith("Title: "):
                              t = msg_str.replace("Title: ", "").strip()
-                             current_msg.write(f"**[{blog['name']}]**\n📄 {t}")
+                             current_msg.markdown(f"**[{blog['name']}]**\n📄 {t}")
+                         elif msg_str.startswith("Processing"):
+                             current_msg.markdown(f"**[{blog['name']}]**\n⏳ {msg_str}")
+                         elif msg_str.startswith("Found"):
+                             status.markdown(f"🔍 {msg_str}")
+                         elif "error" in msg_str.lower() or "fatal" in msg_str.lower():
+                             status.markdown(f"⚠️ {msg_str}")
 
                      def should_stop():
                          return bool(st.session_state.get("cancel_scrape", False))
 
                      res = collect_blog_posts(blog["name"], blog["url"], start_date, end_date, cb, log_cb, should_stop)
+                     prog_bar.empty()
                      
                      saved = res.get("saved", 0)
                      found = res.get("total", 0)
