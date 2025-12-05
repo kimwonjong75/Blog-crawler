@@ -8,6 +8,7 @@ import db_manager as dbm
 from typing import Optional, List, Dict
 from textwrap import shorten
 import os
+
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -172,14 +173,7 @@ with st.sidebar:
     
     selected_targets = []
     if st.session_state["blogs"]:
-        # 데이터프레임 변환
         _df = pd.DataFrame(st.session_state["blogs"])
-        # UI용 데이터 준비 (선택 컬럼 추가)
-        # 세션 상태에 저장된 선택 상태가 있다면 반영할 수도 있겠지만, 
-        # 여기서는 data_editor 자체 state(key)를 활용하거나 매번 초기화.
-        # 심플하게 매번 False로 시작하거나, 전체 선택을 기본으로 할 수도 있음.
-        # 사용자 편의를 위해 기본적으로 모두 선택되어 있지 않게(False) 설정.
-        
         target_data = _df[["name", "url"]].copy()
         target_data.insert(0, "선택", False)
         
@@ -195,7 +189,6 @@ with st.sidebar:
             key="blog_selector_editor"
         )
         
-        # 선택된 블로그 URL 추출
         if not edited_df.empty:
             selected_rows = edited_df[edited_df["선택"]]
             selected_urls = set(selected_rows["url"])
@@ -207,7 +200,6 @@ with st.sidebar:
     default_start, default_end = st.session_state["date_range"]
     picked = st.date_input(
         "기간 선택",
-        
         value=(default_start, default_end),
         max_value=date.today(),
     )
@@ -306,40 +298,65 @@ if st.session_state["blogs"]:
 else:
     st.info("블로그를 추가하세요")
 
+
+def render_posts(posts: List[Dict]):
+    if not posts:
+        st.info("표시할 데이터가 없습니다.")
+        return
+    for row in posts:
+        t = str(row.get("title", "")).strip()
+        d = str(row.get("date", "")).strip()
+        content_raw = str(row.get("content", "")).strip()
+        preview_text = content_raw[:500] + ("..." if len(content_raw) > 500 else "")
+        l = str(row.get("link", "")).strip()
+        
+        label = f"[{d}] {t}"
+        with st.expander(label):
+            st.write(preview_text)
+            if l:
+                st.markdown(f"[원본 보기]({l})")
+
+
+def style_header(text, bg_color="#f0f2f6", text_color="#31333f"):
+    return f"""<span style='background-color: {bg_color}; color: {text_color}; padding: 4px 10px; border-radius: 5px; font-weight: bold; font-size: 1.05em;'>{text}</span>"""
+
+
 tab1, tab2 = st.tabs(["AI 분석 및 대화", "수집 데이터 조회"])
 
 with tab1:
-    st.header("AI 분석 및 대화")
-    st.session_state.setdefault("ai_question", "")
-    st.session_state["ai_question"] = st.text_area("AI 질문", value=st.session_state.get("ai_question", ""), height=120)
+    # UX 개선: 가로 폭 제한 및 중앙 정렬
+    _, col_main, _ = st.columns([1, 2, 1])
     
-    if st.button("AI 분석 요청"):
-        api_key = os.environ.get("GEMINI_API_KEY") or st.secrets.get("GEMINI_API_KEY")
-        if not api_key:
-            st.error("Google Gemini API 키가 설정되지 않았습니다. 환경 변수(GEMINI_API_KEY)를 확인하세요.")
-        else:
-            sel_name = None
-            sel_url = None
-            if st.session_state.get("selected_blog_id") is not None:
-                sel_list = [b for b in st.session_state["blogs"] if b["id"] == st.session_state["selected_blog_id"]]
-                if sel_list:
-                    sel_name = sel_list[0]["name"]
-                    sel_url = sel_list[0]["url"]
-            
-            # AI Context uses global date range (Sidebar) or View range? 
-            # Using Sidebar range for consistency with previous behavior unless specified.
-            start_date, end_date = st.session_state["date_range"]
-            posts_for_ai = dbm.query_posts_for_blog(sel_url, start_date, end_date, "")
-            
-            if not posts_for_ai:
-                st.info("관련된 글이 없습니다.")
+    with col_main:
+        st.header("AI 분석 및 대화")
+        st.session_state.setdefault("ai_question", "")
+        st.session_state["ai_question"] = st.text_area("AI 질문", value=st.session_state.get("ai_question", ""), height=120)
+        
+        if st.button("AI 분석 요청"):
+            api_key = os.environ.get("GEMINI_API_KEY") or st.secrets.get("GEMINI_API_KEY")
+            if not api_key:
+                st.error("Google Gemini API 키가 설정되지 않았습니다. 환경 변수(GEMINI_API_KEY)를 확인하세요.")
             else:
-                ctx_parts = []
-                for r in posts_for_ai:
-                    ctx_parts.append(str(r.get("content", "")))
-                context_text = "\n\n".join(ctx_parts)
-                context_text = context_text[:8000]
-                system_prompt = """당신은 매크로 경제 및 산업 사이클을 분석하는 수석 투자 전략가입니다. 
+                sel_name = None
+                sel_url = None
+                if st.session_state.get("selected_blog_id") is not None:
+                    sel_list = [b for b in st.session_state["blogs"] if b["id"] == st.session_state["selected_blog_id"]]
+                    if sel_list:
+                        sel_name = sel_list[0]["name"]
+                        sel_url = sel_list[0]["url"]
+                
+                start_date, end_date = st.session_state["date_range"]
+                posts_for_ai = dbm.query_posts_for_blog(sel_url, start_date, end_date, "")
+                
+                if not posts_for_ai:
+                    st.info("관련된 글이 없습니다.")
+                else:
+                    ctx_parts = []
+                    for r in posts_for_ai:
+                        ctx_parts.append(str(r.get("content", "")))
+                    context_text = "\n\n".join(ctx_parts)
+                    context_text = context_text[:8000]
+                    system_prompt = """당신은 매크로 경제 및 산업 사이클을 분석하는 수석 투자 전략가입니다. 
 제공된 블로그 글들은 단순 종목 추천이 아니라, 시장 현상의 근본 원인을 파헤치는 글들입니다. 
 블로그 글에서 언급된 '현상'과 '원인'을 분리하고, 그 원인이 향후 어떤 산업이나 자산군에 영향을 미칠지 논리적으로 연결해야 합니다. 
 
@@ -368,141 +385,159 @@ with tab1:
    - 저자의 뷰를 바탕으로 한 투자 아이디어 3줄 요약
 
 답변은 전문적이고 통찰력 있게 작성하되, 블로그 내용을 벗어난 없는 사실을 지어내지 마세요."""
-                question = st.session_state.get("ai_question", "")
-                with st.spinner("AI 분석 중..."):
-                    ans = None
-                    try:
+                    question = st.session_state.get("ai_question", "")
+                    with st.spinner("AI 분석 중..."):
+                        ans = None
                         try:
-                            import google.generativeai as genai
-                            genai.configure(api_key=api_key)
-                            model_names = [
-                                "models/gemini-flash-latest",
-                                "models/gemini-2.5-flash",
-                                "models/gemini-pro-latest",
-                            ]
-                            last_err = None
-                            resp = None
-                            for mn in model_names:
-                                try:
-                                    model = genai.GenerativeModel(mn)
-                                    resp = model.generate_content([
-                                        system_prompt,
-                                        f"Context:\n{context_text}",
-                                        f"Question:\n{question}",
-                                    ])
-                                    break
-                                except Exception as _e:
-                                    last_err = _e
-                                    continue
-                            if resp is None and last_err is not None:
-                                raise last_err
-                            ans = getattr(resp, "text", None) or str(resp)
-                        except Exception as e:
-                            ans = f"Gemini 호출 중 오류: {e}"
-                    finally:
-                        st.session_state["ai_answer"] = ans or "응답을 받을 수 없습니다."
-                        st.session_state["chat_history"].append({"role": "user", "content": question})
-                        st.session_state["chat_history"].append({"role": "assistant", "content": st.session_state["ai_answer"]})
+                            try:
+                                import google.generativeai as genai
+                                genai.configure(api_key=api_key)
+                                model_names = [
+                                    "models/gemini-flash-latest",
+                                    "models/gemini-2.5-flash",
+                                    "models/gemini-pro-latest",
+                                ]
+                                last_err = None
+                                resp = None
+                                for mn in model_names:
+                                    try:
+                                        model = genai.GenerativeModel(mn)
+                                        resp = model.generate_content([
+                                            system_prompt,
+                                            f"Context:\n{context_text}",
+                                            f"Question:\n{question}",
+                                        ])
+                                        break
+                                    except Exception as _e:
+                                        last_err = _e
+                                        continue
+                                if resp is None and last_err is not None:
+                                    raise last_err
+                                ans = getattr(resp, "text", None) or str(resp)
+                            except Exception as e:
+                                ans = f"Gemini 호출 중 오류: {e}"
+                        finally:
+                            st.session_state["ai_answer"] = ans or "응답을 받을 수 없습니다."
+                            st.session_state["chat_history"].append({"role": "user", "content": question})
+                            st.session_state["chat_history"].append({"role": "assistant", "content": st.session_state["ai_answer"]})
 
-    if st.session_state.get("ai_answer"):
-        st.subheader("AI 분석 결과")
-        st.markdown(st.session_state["ai_answer"])
+        if st.session_state.get("ai_answer"):
+            # 디자인 개선: 제목 아이콘 및 스타일
+            st.markdown("## 💡 AI 분석 결과", unsafe_allow_html=True)
+            
+            raw_ans = st.session_state["ai_answer"]
+            
+            # 구조적 구분 및 강조
+            # 예상되는 구조: ### [핵심 논거] ... --- ### [인과 관계] ... --- ### [투자 인사이트] ... --- ### 결론 ...
+            
+            parts = raw_ans.split("---")
+            for part in parts:
+                part = part.strip()
+                if not part: continue
+                
+                # 투자 인사이트 강조
+                if "### [투자 인사이트]" in part:
+                    content = part.replace("### [투자 인사이트]", "").strip()
+                    st.warning(f"### 💰 [투자 인사이트]\n\n{content}", icon="💰")
+                else:
+                    # 헤더 스타일링
+                    if "### [핵심 논거]" in part:
+                        new_header = style_header("🎯 [핵심 논거]", "#e8f0fe", "#174ea6")
+                        part = part.replace("### [핵심 논거]", new_header)
+                        st.markdown(part, unsafe_allow_html=True)
+                    elif "### [인과 관계]" in part:
+                        new_header = style_header("🔗 [인과 관계]", "#e6f4ea", "#137333")
+                        part = part.replace("### [인과 관계]", new_header)
+                        st.markdown(part, unsafe_allow_html=True)
+                    elif "### 결론" in part:
+                        new_header = style_header("📝 결론", "#f1f3f4", "#202124")
+                        part = part.replace("### 결론", new_header)
+                        st.markdown(part, unsafe_allow_html=True)
+                    else:
+                        st.markdown(part)
+                
+                st.write("") # 간격
 
-    if st.session_state.get("chat_history"):
-        st.divider()
-        st.subheader("AI 대화 기록")
-        for m in st.session_state["chat_history"][-10:]:
-            st.write(f"{m['role']}: {m['content']}")
-
-def render_posts(posts: List[Dict]):
-    if not posts:
-        st.info("표시할 데이터가 없습니다.")
-        return
-    for row in posts:
-        t = str(row.get("title", "")).strip()
-        d = str(row.get("date", "")).strip()
-        content_raw = str(row.get("content", "")).strip()
-        preview_text = content_raw[:500] + ("..." if len(content_raw) > 500 else "")
-        l = str(row.get("link", "")).strip()
-        
-        # 심플한 리스트 형태: [날짜] 제목
-        label = f"[{d}] {t}"
-        with st.expander(label):
-            st.write(preview_text)
-            if l:
-                st.markdown(f"[원본 보기]({l})")
+        if st.session_state.get("chat_history"):
+            st.divider()
+            st.subheader("AI 대화 기록")
+            # 디자인 개선: st.chat_message 사용
+            for m in st.session_state["chat_history"][-10:]:
+                with st.chat_message(m["role"]):
+                    st.write(m["content"])
 
 with tab2:
-    st.header("수집 데이터 조회")
+    # UX 개선: 가로 폭 제한 및 중앙 정렬
+    _, col_main, _ = st.columns([1, 2, 1])
     
-    c1, c2 = st.columns([1, 1])
-    with c1:
-        default_start, default_end = st.session_state.get("date_range", (date.today() - timedelta(days=7), date.today()))
-        view_picked = st.date_input(
-            "조회 기간",
-            value=(default_start, default_end),
-            max_value=date.today(),
-            key="view_date_range"
-        )
-    with c2:
-        st.text_input("검색어", key="search_query")
-
-    selected_blog_url = None
-    if st.session_state.get("selected_blog_id") is not None:
-        sel = [b for b in st.session_state["blogs"] if b["id"] == st.session_state["selected_blog_id"]]
-        if sel:
-            selected_blog_url = sel[0]["url"]
-    
-    if selected_blog_url:
-        if isinstance(view_picked, tuple) and len(view_picked) == 2:
-            v_start, v_end = view_picked
-            posts = dbm.query_posts_for_blog(
-                selected_blog_url, 
-                v_start, 
-                v_end, 
-                st.session_state.get("search_query", "")
+    with col_main:
+        st.header("수집 데이터 조회")
+        
+        c1, c2 = st.columns([1, 1])
+        with c1:
+            default_start, default_end = st.session_state.get("date_range", (date.today() - timedelta(days=7), date.today()))
+            view_picked = st.date_input(
+                "조회 기간",
+                value=(default_start, default_end),
+                max_value=date.today(),
+                key="view_date_range"
             )
-            
-            # 페이지네이션 구현
-            if not posts:
-                st.info("데이터가 없습니다.")
-            else:
-                items_per_page = 30
-                total_items = len(posts)
-                total_pages = max(1, (total_items + items_per_page - 1) // items_per_page)
-                
-                if "view_page" not in st.session_state:
-                    st.session_state["view_page"] = 1
-                
-                # 현재 페이지가 전체 페이지 범위를 벗어나지 않도록 보정
-                if st.session_state["view_page"] > total_pages:
-                    st.session_state["view_page"] = total_pages
-                if st.session_state["view_page"] < 1:
-                    st.session_state["view_page"] = 1
-                
-                col_p1, col_p2 = st.columns([1, 5])
-                with col_p1:
-                    page = st.number_input(
-                        "페이지 이동", 
-                        min_value=1, 
-                        max_value=total_pages, 
-                        key="view_page"
-                    )
-                with col_p2:
-                    st.write("") # Spacer
-                    st.caption(f"전체 {total_items}개 데이터 중 {page} / {total_pages} 페이지")
+        with c2:
+            st.text_input("검색어", key="search_query")
 
-                start_idx = (page - 1) * items_per_page
-                end_idx = start_idx + items_per_page
-                current_posts = posts[start_idx:end_idx]
+        selected_blog_url = None
+        if st.session_state.get("selected_blog_id") is not None:
+            sel = [b for b in st.session_state["blogs"] if b["id"] == st.session_state["selected_blog_id"]]
+            if sel:
+                selected_blog_url = sel[0]["url"]
+        
+        if selected_blog_url:
+            if isinstance(view_picked, tuple) and len(view_picked) == 2:
+                v_start, v_end = view_picked
+                posts = dbm.query_posts_for_blog(
+                    selected_blog_url, 
+                    v_start, 
+                    v_end, 
+                    st.session_state.get("search_query", "")
+                )
                 
-                render_posts(current_posts)
+                if not posts:
+                    st.info("데이터가 없습니다.")
+                else:
+                    items_per_page = 30
+                    total_items = len(posts)
+                    total_pages = max(1, (total_items + items_per_page - 1) // items_per_page)
+                    
+                    if "view_page" not in st.session_state:
+                        st.session_state["view_page"] = 1
+                    
+                    if st.session_state["view_page"] > total_pages:
+                        st.session_state["view_page"] = total_pages
+                    if st.session_state["view_page"] < 1:
+                        st.session_state["view_page"] = 1
+                    
+                    col_p1, col_p2 = st.columns([1, 5])
+                    with col_p1:
+                        page = st.number_input(
+                            "페이지 이동", 
+                            min_value=1, 
+                            max_value=total_pages, 
+                            key="view_page"
+                        )
+                    with col_p2:
+                        st.write("") 
+                        st.caption(f"전체 {total_items}개 데이터 중 {page} / {total_pages} 페이지")
+
+                    start_idx = (page - 1) * items_per_page
+                    end_idx = start_idx + items_per_page
+                    current_posts = posts[start_idx:end_idx]
+                    
+                    render_posts(current_posts)
+            else:
+                st.info("기간을 선택하세요 (시작일 - 종료일)")
         else:
-            st.info("기간을 선택하세요 (시작일 - 종료일)")
-    else:
-        st.info("블로그를 선택하세요")
+            st.info("블로그를 선택하세요")
 
 if st.session_state.get("scrape_logs"):
     with st.sidebar.expander("수집 로그"):
         st.text("\n".join(st.session_state["scrape_logs"]))
-
