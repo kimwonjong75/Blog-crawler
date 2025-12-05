@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>블로그 크롤러 문서</title>
+  <style>
+    body{margin:40px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#0f172a;color:#e5e7eb}
+    h1{font-size:28px;margin:0 0 16px}
+    h2{font-size:20px;margin:24px 0 12px}
+    code{background:#0b1220;color:#93c5fd;padding:2px 6px;border-radius:6px}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace}
+    a{color:#93c5fd}
+    .box{background:#111827;padding:16px;border-radius:12px}
+  </style>
+</head>
+<body>
+  <h1>블로그 크롤러 문서</h1>
+  <div class="box">
+    <h2>개요</h2>
+    <p>이 프로젝트는 네이버 블로그 글을 수집하고, 선택한 기간의 데이터를 AI로 분석하는 도구입니다. UI는 <code>Streamlit</code>으로 제공되며 로컬 실행을 권장합니다.</p>
+
+    <h2>실행</h2>
+    <p class="mono">pip install -r requirements.txt</p>
+    <p class="mono">python -m streamlit run app.py</p>
+
+    <h2>환경변수</h2>
+    <p>AI 분석 기능 사용 시 <code>GEMINI_API_KEY</code>가 필요합니다. 운영 환경에서는 비밀키를 저장소에 커밋하지 말고, 제공 플랫폼의 시크릿 스토어를 사용하세요.</p>
+
+    <h2>자주 묻는 질문</h2>
+    <ul>
+      <li>배포 페이지가 404면 <code>index.html</code> 존재 여부와 <code>vercel.json</code> 라우팅을 확인하세요.</li>
+      <li>콘솔에 확장 프로그램 관련 에러가 보이면 브라우저 확장(예: 검색 레이어)을 일시적으로 비활성화 후 재검증하세요.</li>
+    </ul>
+
+    <p><a href="/">랜딩으로 돌아가기</a></p>
+  </div>
+</body>
+</html>
