@@ -127,6 +127,8 @@ def init_state():
         st.session_state["last_add_error"] = ""
     if "chat_history" not in st.session_state:
         st.session_state["chat_history"] = []
+    if "analyzing" not in st.session_state:
+        st.session_state["analyzing"] = False
 
 
 st.set_page_config(page_title="블로그 AI 분석기", layout="wide")
@@ -332,10 +334,19 @@ with tab1:
         st.session_state.setdefault("ai_question", "")
         st.session_state["ai_question"] = st.text_area("AI 질문", value=st.session_state.get("ai_question", ""), height=120)
         
-        if st.button("AI 분석 요청"):
+        def start_analysis():
+            st.session_state["analyzing"] = True
+
+        if st.session_state["analyzing"]:
+            st.button("분석 중...", disabled=True)
+        else:
+            st.button("AI 분석 요청", on_click=start_analysis)
+
+        if st.session_state["analyzing"]:
             api_key = os.environ.get("GEMINI_API_KEY") or st.secrets.get("GEMINI_API_KEY")
             if not api_key:
                 st.error("Google Gemini API 키가 설정되지 않았습니다. 환경 변수(GEMINI_API_KEY)를 확인하세요.")
+                st.session_state["analyzing"] = False
             else:
                 sel_name = None
                 sel_url = None
@@ -420,6 +431,8 @@ with tab1:
                             st.session_state["ai_answer"] = ans or "응답을 받을 수 없습니다."
                             st.session_state["chat_history"].append({"role": "user", "content": question})
                             st.session_state["chat_history"].append({"role": "assistant", "content": st.session_state["ai_answer"]})
+                            st.session_state["analyzing"] = False
+                            st.rerun()
 
         if st.session_state.get("ai_answer"):
             # 디자인 개선: 제목 아이콘 및 스타일
