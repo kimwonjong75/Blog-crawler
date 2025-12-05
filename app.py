@@ -219,91 +219,66 @@ with st.sidebar:
             st.session_state["cancel_scrape"] = True
 
     if st.button("데이터 수집 시작", use_container_width=True):
-        if not st.session_state.get("selected_blog_id"):
-            # 단일 선택이 아닌, 체크박스로 선택된 블로그들이 있는지 확인
-            if not selected_targets and not st.session_state.get("selected_blog_id"):
-                 st.sidebar.error("수집할 블로그를 선택하세요 (체크박스)")
-            elif selected_targets:
-                # 체크된 블로그들로 수집 진행
-                targets = selected_targets
-                
-                start_date, end_date = st.session_state["date_range"]
-                st.session_state["scrape_logs"] = []
-                st.session_state["cancel_scrape"] = False
-                st.session_state["scraping"] = True
-                total_saved = 0
-                total_found = 0
-                
-                for blog in targets:
-                    if st.session_state.get("cancel_scrape", False):
-                        break
-                    # ... (이하 동일)
-                    st.sidebar.text(f"[{blog['name']}] 수집 시작...")
-                    
-                    bar = st.progress(0)
-                    def cb(p):
-                        try:
-                            bar.progress(min(max(int(p), 0), 100))
-                        except Exception:
-                            pass
-                    def log_cb(msg):
-                        try:
-                            st.session_state["scrape_logs"].append(f"[{blog['name']}] {str(msg)}")
-                        except Exception:
-                            pass
-                    def should_stop():
-                        return bool(st.session_state.get("cancel_scrape", False))
-                    res = collect_blog_posts(blog["name"], blog["url"], start_date, end_date, cb, log_cb, should_stop)
-                    total_saved += res.get("saved", 0)
-                    total_found += res.get("total", 0)
-                st.sidebar.success(f"총 {total_found}개 중 {total_saved}개 저장 완료")
-                st.session_state["scraping"] = False
-            else:
-                 # Fallback (should rarely happen if selected_targets is checked)
-                 st.sidebar.error("수집할 블로그를 선택하세요")
+        targets = []
+        if selected_targets:
+            targets = selected_targets
+        elif st.session_state.get("selected_blog_id"):
+             sel = [b for b in st.session_state["blogs"] if b["id"] == st.session_state["selected_blog_id"]]
+             if sel:
+                 targets = sel
+        
+        if not targets:
+             st.sidebar.error("수집할 블로그를 선택하세요")
         else:
-            # Legacy: selected_blog_id logic (if needed, but we prefer checkboxes now)
-            # If user checks boxes, we use boxes. If not, maybe fallback to dropdown?
-            # User instruction said: "사용자가 체크한 블로그들만 수집 대상(targets)이 되도록"
-            # So we prioritize checkboxes.
-            
-            if selected_targets:
-                targets = selected_targets
-            else:
-                # If no checkboxes checked, check if dropdown is selected (legacy behavior)
-                # But user explicitly asked to use checkboxes. 
-                # Let's assume if no checkbox is checked, we warn.
-                st.sidebar.error("목록에서 수집할 블로그를 체크하세요")
-                targets = []
+             start_date, end_date = st.session_state["date_range"]
+             st.session_state["scrape_logs"] = []
+             st.session_state["cancel_scrape"] = False
+             st.session_state["scraping"] = True
+             
+             total_saved = 0
+             total_found = 0
+             
+             with st.status("데이터 수집 중...", expanded=True) as status:
+                 for blog in targets:
+                     if st.session_state.get("cancel_scrape", False):
+                         status.write("⛔ 수집이 중단되었습니다.")
+                         break
+                     
+                     current_msg = status.empty()
+                     current_msg.write(f"**[{blog['name']}]** 준비 중...")
+                     
+                     def cb(p):
+                         pass
 
-            if targets:
-                start_date, end_date = st.session_state["date_range"]
-                st.session_state["scrape_logs"] = []
-                st.session_state["cancel_scrape"] = False
-                st.session_state["scraping"] = True
-                total_saved = 0
-                total_found = 0
-                for blog in targets:
-                    if st.session_state.get("cancel_scrape", False):
-                        break
-                    bar = st.progress(0)
-                    def cb(p):
-                        try:
-                            bar.progress(min(max(int(p), 0), 100))
-                        except Exception:
-                            pass
-                    def log_cb(msg):
-                        try:
-                            st.session_state["scrape_logs"].append(f"[{blog['name']}] {str(msg)}")
-                        except Exception:
-                            pass
-                    def should_stop():
-                        return bool(st.session_state.get("cancel_scrape", False))
-                    res = collect_blog_posts(blog["name"], blog["url"], start_date, end_date, cb, log_cb, should_stop)
-                    total_saved += res.get("saved", 0)
-                    total_found += res.get("total", 0)
-                st.sidebar.success(f"총 {total_found}개 중 {total_saved}개 저장 완료")
-                st.session_state["scraping"] = False
+                     def log_cb(msg):
+                         msg_str = str(msg)
+                         st.session_state["scrape_logs"].append(f"[{blog['name']}] {msg_str}")
+                         if msg_str.startswith("Title: "):
+                             t = msg_str.replace("Title: ", "").strip()
+                             current_msg.write(f"**[{blog['name']}]**\n📄 {t}")
+
+                     def should_stop():
+                         return bool(st.session_state.get("cancel_scrape", False))
+
+                     res = collect_blog_posts(blog["name"], blog["url"], start_date, end_date, cb, log_cb, should_stop)
+                     
+                     saved = res.get("saved", 0)
+                     found = res.get("total", 0)
+                     duplicates = res.get("duplicates", 0)
+                     
+                     total_saved += saved
+                     total_found += found
+                     
+                     current_msg.empty()
+                     status.write(f"✅ **{blog['name']}**: 총 {found}개 발견, {saved}개 저장 ({duplicates}개 중복 스킵)")
+
+                 if not st.session_state.get("cancel_scrape", False):
+                     status.update(label="수집 완료!", state="complete", expanded=False)
+                 else:
+                     status.update(label="수집 중단됨", state="error", expanded=False)
+                
+             st.sidebar.success(f"총 {total_found}개 중 {total_saved}개 저장 완료")
+             st.session_state["scraping"] = False
 
 
 st.title("블로그 AI 분석기")

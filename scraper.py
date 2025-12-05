@@ -244,6 +244,7 @@ def collect_blog_posts(blog_name: str, blog_url: str, start_date: date, end_date
             except Exception:
                 pass
         saved = 0
+        duplicates = 0
         for i, (link, dd_hint) in enumerate(iter_items):
             if should_stop_cb and should_stop_cb():
                 if log_cb:
@@ -286,10 +287,17 @@ def collect_blog_posts(blog_name: str, blog_url: str, start_date: date, end_date
             if not title:
                 title = content.split("\n")[0][:80]
             
+            if log_cb:
+                try:
+                    log_cb(f"Title: {title}")
+                except Exception:
+                    pass
+
             # [중복 수집 방지]
             # 이미 DB에 (블로그명, 제목, 날짜)가 동일한 글이 있다면
             # 내용은 비교하지 않고 건너뜁니다.
             if is_duplicate(cur, blog_name, title, d_str):
+                duplicates += 1
                 if log_cb:
                     try:
                         log_cb("Skip duplicate (Same title & date)")
@@ -317,7 +325,7 @@ def collect_blog_posts(blog_name: str, blog_url: str, start_date: date, end_date
                     conn.close()
                     if progress_cb:
                         progress_cb(100)
-                    return {"total": total, "saved": saved}
+                    return {"total": total, "saved": saved, "duplicates": duplicates}
                 now = time.monotonic()
                 if now >= end:
                     break
@@ -327,7 +335,7 @@ def collect_blog_posts(blog_name: str, blog_url: str, start_date: date, end_date
         conn.close()
         if progress_cb:
             progress_cb(100)
-        return {"total": total, "saved": saved}
+        return {"total": total, "saved": saved, "duplicates": duplicates}
     except BaseException as e:
         try:
             if log_cb:
