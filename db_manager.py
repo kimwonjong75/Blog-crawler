@@ -217,3 +217,47 @@ def save_post(cur, blog_name: str, title: str, d: str, content: str, link: str):
         "INSERT INTO posts(blog_name, title, date, content, link, created_at) VALUES(?,?,?,?,?,?)",
         (blog_name, title, d, content, link, pd.Timestamp.utcnow().isoformat()),
     )
+
+
+def create_chats_table():
+    conn = get_blog_conn()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS chats (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            role TEXT NOT NULL,
+            content TEXT NOT NULL,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    conn.commit()
+    conn.close()
+
+
+def save_chat_history(session_id: str, role: str, content: str):
+    conn = get_blog_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO chats(session_id, role, content, timestamp) VALUES (?, ?, ?, ?)",
+            (session_id, role, content, pd.Timestamp.now().isoformat()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def load_chat_history(session_id: str):
+    conn = get_blog_conn()
+    try:
+        df = pd.read_sql_query(
+            "SELECT session_id, role, content, timestamp FROM chats WHERE session_id = ? ORDER BY timestamp ASC",
+            conn,
+            params=(session_id,),
+        )
+        return df.to_dict("records") if not df.empty else []
+    finally:
+        conn.close()
