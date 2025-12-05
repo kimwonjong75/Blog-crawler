@@ -319,20 +319,21 @@ with tab1:
 
 def render_posts(posts: List[Dict]):
     if not posts:
-        st.info("관련된 글이 없습니다.")
+        st.info("표시할 데이터가 없습니다.")
         return
     for row in posts:
-        with st.container():
-            t = str(row.get("title", "")).strip()
-            d = str(row.get("date", "")).strip()
-            c = str(row.get("content", "")).replace("\n", " ")
-            s = c[:100]
-            l = str(row.get("link", "")).strip()
-            st.write(f"[{d}] {t}")
-            st.write(s)
+        t = str(row.get("title", "")).strip()
+        d = str(row.get("date", "")).strip()
+        content_raw = str(row.get("content", "")).strip()
+        preview_text = content_raw[:500] + ("..." if len(content_raw) > 500 else "")
+        l = str(row.get("link", "")).strip()
+        
+        # 심플한 리스트 형태: [날짜] 제목
+        label = f"[{d}] {t}"
+        with st.expander(label):
+            st.write(preview_text)
             if l:
-                st.markdown(f'<a href="{l}" target="_blank">원본 보기</a>', unsafe_allow_html=True)
-        st.divider()
+                st.markdown(f"[원본 보기]({l})")
 
 with tab2:
     st.header("수집 데이터 조회")
@@ -364,7 +365,41 @@ with tab2:
                 v_end, 
                 st.session_state.get("search_query", "")
             )
-            render_posts(posts)
+            
+            # 페이지네이션 구현
+            if not posts:
+                st.info("데이터가 없습니다.")
+            else:
+                items_per_page = 30
+                total_items = len(posts)
+                total_pages = max(1, (total_items + items_per_page - 1) // items_per_page)
+                
+                if "view_page" not in st.session_state:
+                    st.session_state["view_page"] = 1
+                
+                # 현재 페이지가 전체 페이지 범위를 벗어나지 않도록 보정
+                if st.session_state["view_page"] > total_pages:
+                    st.session_state["view_page"] = total_pages
+                if st.session_state["view_page"] < 1:
+                    st.session_state["view_page"] = 1
+                
+                col_p1, col_p2 = st.columns([1, 5])
+                with col_p1:
+                    page = st.number_input(
+                        "페이지 이동", 
+                        min_value=1, 
+                        max_value=total_pages, 
+                        key="view_page"
+                    )
+                with col_p2:
+                    st.write("") # Spacer
+                    st.caption(f"전체 {total_items}개 데이터 중 {page} / {total_pages} 페이지")
+
+                start_idx = (page - 1) * items_per_page
+                end_idx = start_idx + items_per_page
+                current_posts = posts[start_idx:end_idx]
+                
+                render_posts(current_posts)
         else:
             st.info("기간을 선택하세요 (시작일 - 종료일)")
     else:
