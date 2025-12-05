@@ -285,13 +285,18 @@ def collect_blog_posts(blog_name: str, blog_url: str, start_date: date, end_date
             d_str = d.isoformat()
             if not title:
                 title = content.split("\n")[0][:80]
+            
+            # [중복 수집 방지]
+            # 이미 DB에 (블로그명, 제목, 날짜)가 동일한 글이 있다면
+            # 내용은 비교하지 않고 건너뜁니다.
             if is_duplicate(cur, blog_name, title, d_str):
                 if log_cb:
                     try:
-                        log_cb("Skip duplicate")
+                        log_cb("Skip duplicate (Same title & date)")
                     except Exception:
                         pass
                 continue
+                
             save_post(cur, blog_name, title, d_str, content, link)
             saved += 1
             delay = random.uniform(5, 20)

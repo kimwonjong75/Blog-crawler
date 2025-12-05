@@ -167,6 +167,42 @@ with st.sidebar:
         st.sidebar.error(st.session_state["last_add_error"])
         st.session_state["last_add_error"] = ""
 
+    st.divider()
+    st.header("수집 대상 선택")
+    
+    selected_targets = []
+    if st.session_state["blogs"]:
+        # 데이터프레임 변환
+        _df = pd.DataFrame(st.session_state["blogs"])
+        # UI용 데이터 준비 (선택 컬럼 추가)
+        # 세션 상태에 저장된 선택 상태가 있다면 반영할 수도 있겠지만, 
+        # 여기서는 data_editor 자체 state(key)를 활용하거나 매번 초기화.
+        # 심플하게 매번 False로 시작하거나, 전체 선택을 기본으로 할 수도 있음.
+        # 사용자 편의를 위해 기본적으로 모두 선택되어 있지 않게(False) 설정.
+        
+        target_data = _df[["name", "url"]].copy()
+        target_data.insert(0, "선택", False)
+        
+        edited_df = st.data_editor(
+            target_data,
+            column_config={
+                "선택": st.column_config.CheckboxColumn("V", help="수집할 블로그 선택", default=False, width="small"),
+                "name": st.column_config.TextColumn("블로그명", disabled=True),
+                "url": st.column_config.TextColumn("URL", disabled=True),
+            },
+            hide_index=True,
+            use_container_width=True,
+            key="blog_selector_editor"
+        )
+        
+        # 선택된 블로그 URL 추출
+        if not edited_df.empty:
+            selected_rows = edited_df[edited_df["선택"]]
+            selected_urls = set(selected_rows["url"])
+            selected_targets = [b for b in st.session_state["blogs"] if b["url"] in selected_urls]
+    else:
+        st.info("등록된 블로그가 없습니다.")
+
     st.header("수집 기간")
     default_start, default_end = st.session_state["date_range"]
     picked = st.date_input(
@@ -184,14 +220,63 @@ with st.sidebar:
 
     if st.button("데이터 수집 시작", use_container_width=True):
         if not st.session_state.get("selected_blog_id"):
-            st.sidebar.error("메인 화면에서 블로그를 선택하세요")
-        else:
-            sel = [b for b in st.session_state["blogs"] if b["id"] == st.session_state["selected_blog_id"]]
-            if not sel:
-                st.sidebar.error("블로그 선택 정보가 없습니다")
+            # 단일 선택이 아닌, 체크박스로 선택된 블로그들이 있는지 확인
+            if not selected_targets and not st.session_state.get("selected_blog_id"):
+                 st.sidebar.error("수집할 블로그를 선택하세요 (체크박스)")
+            elif selected_targets:
+                # 체크된 블로그들로 수집 진행
+                targets = selected_targets
+                
+                start_date, end_date = st.session_state["date_range"]
+                st.session_state["scrape_logs"] = []
+                st.session_state["cancel_scrape"] = False
+                st.session_state["scraping"] = True
+                total_saved = 0
+                total_found = 0
+                
+                for blog in targets:
+                    if st.session_state.get("cancel_scrape", False):
+                        break
+                    # ... (이하 동일)
+                    st.sidebar.text(f"[{blog['name']}] 수집 시작...")
+                    
+                    bar = st.progress(0)
+                    def cb(p):
+                        try:
+                            bar.progress(min(max(int(p), 0), 100))
+                        except Exception:
+                            pass
+                    def log_cb(msg):
+                        try:
+                            st.session_state["scrape_logs"].append(f"[{blog['name']}] {str(msg)}")
+                        except Exception:
+                            pass
+                    def should_stop():
+                        return bool(st.session_state.get("cancel_scrape", False))
+                    res = collect_blog_posts(blog["name"], blog["url"], start_date, end_date, cb, log_cb, should_stop)
+                    total_saved += res.get("saved", 0)
+                    total_found += res.get("total", 0)
+                st.sidebar.success(f"총 {total_found}개 중 {total_saved}개 저장 완료")
+                st.session_state["scraping"] = False
             else:
-                selected_ids = [b["id"] for b in st.session_state["blogs"] if st.session_state.get(f"collect_chk_{b['id']}", False)]
-                targets = [b for b in st.session_state["blogs"] if b["id"] in selected_ids] or sel
+                 # Fallback (should rarely happen if selected_targets is checked)
+                 st.sidebar.error("수집할 블로그를 선택하세요")
+        else:
+            # Legacy: selected_blog_id logic (if needed, but we prefer checkboxes now)
+            # If user checks boxes, we use boxes. If not, maybe fallback to dropdown?
+            # User instruction said: "사용자가 체크한 블로그들만 수집 대상(targets)이 되도록"
+            # So we prioritize checkboxes.
+            
+            if selected_targets:
+                targets = selected_targets
+            else:
+                # If no checkboxes checked, check if dropdown is selected (legacy behavior)
+                # But user explicitly asked to use checkboxes. 
+                # Let's assume if no checkbox is checked, we warn.
+                st.sidebar.error("목록에서 수집할 블로그를 체크하세요")
+                targets = []
+
+            if targets:
                 start_date, end_date = st.session_state["date_range"]
                 st.session_state["scrape_logs"] = []
                 st.session_state["cancel_scrape"] = False
